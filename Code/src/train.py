@@ -1,9 +1,9 @@
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from xgboost import XGBClassifier
 from typing import Dict, Any, Tuple
 
 def get_models_and_params() -> Dict[str, Tuple[Any, Dict[str, Any]]]:
@@ -21,12 +21,20 @@ def get_models_and_params() -> Dict[str, Tuple[Any, Dict[str, Any]]]:
                 'penalty': ['l2']
             }
         ),
-        'SVM': (
-            SVC(probability=True, random_state=42),
+        'DecisionTree': (
+            DecisionTreeClassifier(random_state=42),
             {
-                'C': [0.1, 1.0, 10.0],
-                'kernel': ['rbf', 'linear'],
-                'gamma': ['scale', 'auto']
+                'criterion': ['gini', 'entropy'],
+                'max_depth': [None, 3, 5, 8, 10],
+                'min_samples_split': [2, 5, 10]
+            }
+        ),
+        'KNN': (
+            KNeighborsClassifier(),
+            {
+                'n_neighbors': [3, 5, 7, 9, 11],
+                'weights': ['uniform', 'distance'],
+                'metric': ['euclidean', 'manhattan']
             }
         ),
         'RandomForest': (
@@ -35,14 +43,6 @@ def get_models_and_params() -> Dict[str, Tuple[Any, Dict[str, Any]]]:
                 'n_estimators': [50, 100, 200],
                 'max_depth': [None, 5, 10],
                 'min_samples_split': [2, 5]
-            }
-        ),
-        'XGBoost': (
-            XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42),
-            {
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_depth': [3, 5, 7],
-                'n_estimators': [50, 100, 200]
             }
         )
     }

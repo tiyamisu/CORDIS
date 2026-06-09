@@ -9,7 +9,7 @@ from typing import Dict, Any, List
 
 def plot_confusion_matrices(trained_models: Dict[str, Any], X_test: pd.DataFrame, y_test: pd.Series, save_dir: str):
     """
-    Generate and save confusion matrices for all models in a single comparative canvas.
+    Generate and save confusion matrices for all models in a single comparative canvas and as individual PNGs.
     """
     n_models = len(trained_models)
     fig, axes = plt.subplots(1, n_models, figsize=(5 * n_models, 4.5))
@@ -20,18 +20,33 @@ def plot_confusion_matrices(trained_models: Dict[str, Any], X_test: pd.DataFrame
         y_pred = model.predict(X_test)
         cm = confusion_matrix(y_test, y_pred)
         
+        # Plot in combined canvas
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[i], cbar=False,
                     xticklabels=['No Disease', 'Disease'], yticklabels=['No Disease', 'Disease'])
         axes[i].set_title(f'{name} Confusion Matrix', fontsize=12, fontweight='bold')
         axes[i].set_ylabel('True Label')
         axes[i].set_xlabel('Predicted Label')
         
+        # Generate and save individual plot
+        plt.figure(figsize=(5, 4.5))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
+                    xticklabels=['No Disease', 'Disease'], yticklabels=['No Disease', 'Disease'])
+        plt.title(f'{name} Confusion Matrix', fontsize=12, fontweight='bold')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.tight_layout()
+        indiv_path = os.path.join(save_dir, f'confusion_matrix_{name}.png')
+        plt.savefig(indiv_path, dpi=300)
+        plt.close()
+        print(f"Saved individual confusion matrix: {indiv_path}")
+        
+    plt.figure(fig.number)
     plt.tight_layout()
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, 'confusion_matrices.png')
     plt.savefig(save_path, dpi=300)
     plt.close()
-    print(f"Confusion matrices plotted and saved to: {save_path}")
+    print(f"Combined confusion matrices plotted and saved to: {save_path}")
 
 def plot_roc_curves(trained_models: Dict[str, Any], X_test: pd.DataFrame, y_test: pd.Series, save_dir: str):
     """
@@ -75,7 +90,7 @@ def plot_feature_importances(trained_models: Dict[str, Any], feature_names: List
     Extract and plot feature importances for tree-based estimators (Random Forest / XGBoost).
     """
     # Pick first tree-based estimator or calculate permutation importance for SVC/LR
-    for name in ['RandomForest', 'XGBoost']:
+    for name in ['RandomForest', 'DecisionTree']:
         if name in trained_models:
             model = trained_models[name]
             importances = model.feature_importances_
