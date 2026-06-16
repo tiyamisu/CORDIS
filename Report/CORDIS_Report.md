@@ -49,7 +49,7 @@ To resolve the trade-off between performance and interpretability, researchers i
 
 ## 1.3 Key Algorithms
 
-To address the diagnostic prediction task, CORDIS evaluates four key machine learning algorithms representing distinct mathematical and learning paradigms:
+To address the diagnostic prediction task, CORDIS evaluates five key machine learning algorithms representing distinct mathematical and learning paradigms:
 
 ### Logistic Regression
 * **Working Principle:** Logistic Regression is a parametric linear classification model that models the probability of a binary outcome. It applies the logistic sigmoid function $\sigma(z) = \frac{1}{1 + e^{-z}}$ to a linear combination of features $z = \mathbf{w}^T \mathbf{x} + b$, mapping the real-valued output to a probability interval between 0 and 1. The model is trained by minimizing the Binary Cross-Entropy (Log Loss) objective function, often combined with $L_2$ regularization (Ridge penalty) to prevent overfitting by penalizing large coefficient weights.
@@ -70,6 +70,11 @@ To address the diagnostic prediction task, CORDIS evaluates four key machine lea
 * **Working Principle:** An ensemble bootstrap aggregating (bagging) technique that constructs a forest of de-correlated decision trees. During training, multiple decision trees are trained on random bootstrap samples of the data, and feature splits are selected from a random subset of attributes to ensure diversity. The final classification is determined by aggregating the individual tree outputs via majority voting.
 * **Advantages:** Drastically reduces model variance compared to individual decision trees, leading to high generalization; provides robust feature importance metrics; handles missing values and outliers effectively.
 * **Limitations:** Slower inference times due to aggregating predictions across hundreds of trees; high memory utilization to store the ensemble; loses the direct visual interpretability of a single decision tree.
+
+### XGBoost (Extreme Gradient Boosting)
+* **Working Principle:** XGBoost is an optimized, highly efficient implementation of gradient boosted decision trees. It builds an ensemble of weak decision trees sequentially. Each new tree attempts to minimize the residual errors of the combined ensemble using a gradient descent optimization of a user-defined loss function. It incorporates regularization terms ($L_1$ and $L_2$ penalties) on leaf weights and tree structures to prevent overfitting.
+* **Advantages:** Superior speed and performance due to parallelized tree building, cache-awareness, and out-of-core computing; handles missing values and categorical features efficiently; features built-in regularization to control variance.
+* **Limitations:** Highly sensitive to hyperparameter configurations; computationally expensive to tune; black-box nature makes feature relationships less transparent than linear baselines.
 
 ---
 
@@ -94,8 +99,8 @@ The feature vector $\mathbf{X}_i$ consists of $d = 13$ clinical features (which 
 9. `exang`: Exercise-induced angina ($1 = \text{yes}; 0 = \text{no}$)
 10. `oldpeak`: ST depression induced by exercise relative to rest
 11. `slope`: The slope of the peak exercise ST segment (values 0, 1, 2)
-12. `ca`: Number of major vessels ($0$–$3$) colored by fluoroscopy
-13. `thal`: Thalassemia (values 1, 2, 3)
+12. `ca`: Number of major vessels ($0$–$4$) colored by fluoroscopy
+13. `thal`: Thalassemia (values 0, 1, 2, 3)
 
 ### Target Variable
 The target variable $y_i$ is binary:
@@ -125,7 +130,7 @@ The selection of heart disease prediction as a core clinical application is just
 
 The CORDIS framework is designed to deliver:
 1. **An Accurate Prediction System:** A validated model capable of identifying heart disease risk using patient covariates with an $F_1$ score exceeding 80%.
-2. **Rigorous Algorithm Comparison:** A clear benchmark of linear (Logistic Regression), distance-based (KNN), tree-based (Decision Tree), and ensemble (Random Forest) models.
+2. **Rigorous Algorithm Comparison:** A clear benchmark of linear (Logistic Regression), distance-based (KNN), tree-based (Decision Tree), and ensemble (Random Forest, XGBoost) models.
 3. **Identification of the Best Model:** Selection of the classifier that minimizes false negatives (maximizing recall/sensitivity) to ensure clinical safety.
 4. **Better Understanding of Risk Factors:** Quantified clinical risk predictors through feature importance analysis to support evidence-based medicine.
 
@@ -139,11 +144,11 @@ The end-to-end execution of the CORDIS pipeline is structured as follows:
 
 ```text
 Algorithm: CORDIS Machine Learning Training & Evaluation Pipeline
-Input: Raw clinical dataset (heart.csv)
+Input: Raw clinical dataset (heart_dataset.csv)
 Output: Trained models, comparison table (model_metrics.csv), and evaluation plots (PNGs)
 
 1. Dataset Collection & Ingestion:
-   df_raw <- read_csv("Datasets/heart.csv")
+   df_raw <- read_csv("Datasets/heart_dataset.csv")
 
 2. Data Preprocessing & Cleaning:
    // Remove duplicate records to prevent data leakage and representation bias
@@ -189,10 +194,11 @@ Output: Trained models, comparison table (model_metrics.csv), and evaluation plo
 
 5. Model Training & Cross-Validated Hyperparameter Tuning:
    Define model_dict containing:
-      - LogisticRegression, param_grid: C in [0.01, 0.1, 1.0, 10.0], penalty="l2"
+      - LogisticRegression, param_grid: C in [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
       - DecisionTreeClassifier, param_grid: max_depth in [None, 3, 5, 8, 10], min_samples_split in [2, 5, 10]
       - KNeighborsClassifier, param_grid: n_neighbors in [3, 5, 7, 9, 11], weights in [uniform, distance], metric in [euclidean, manhattan]
       - RandomForestClassifier, param_grid: n_estimators in [50, 100, 200], max_depth in [None, 5, 10], min_samples_split in [2, 5]
+      - XGBClassifier, param_grid: n_estimators in [50, 100, 200], max_depth in [3, 5, 7], learning_rate in [0.01, 0.1, 0.2]
       
    Initialize trained_models <- empty dictionary
    For each model_name, (estimator, grid) in model_dict:
@@ -220,7 +226,7 @@ Output: Trained models, comparison table (model_metrics.csv), and evaluation plo
    plot_confusion_matrices(trained_models, X_test_trans, y_test, save_dir="Images")
    plot_roc_curves(trained_models, X_test_trans, y_test, save_dir="Images")
    plot_feature_importances(trained_models, save_dir="Images")
-   plot_accuracy_comparison(report_df, save_dir="Images")
+   plot_model_comparison(report_df, save_dir="Images")
 ```
 
 ---
@@ -228,12 +234,12 @@ Output: Trained models, comparison table (model_metrics.csv), and evaluation plo
 ## 3.2 Implementation Details
 
 The implementation details of the CORDIS pipeline ensure high-fidelity statistical learning:
-* **Dataset Acquisition:** The source dataset is loaded from `Datasets/heart.csv`. It comprises physical characteristics and lab values gathered from patient screens.
-* **Data Preprocessing:** The raw dataset of 1,025 samples contains 723 duplicate patient logs. If unaddressed, this duplication leads to artificial evaluation performance (data leakage) because identical patient records could split into both the train and test partitions. Preprocessing removes these duplicate rows, leaving a clean dataset of 302 unique observations. Missing values are evaluated and handled using a median imputation strategy for continuous data and a mode strategy for categorical variables.
+* **Dataset Acquisition:** The source dataset is loaded from `Datasets/heart_dataset.csv`. It comprises physical characteristics and lab values gathered from patient screens.
+* **Data Preprocessing:** The raw dataset of 1,888 samples contains 1,286 duplicate patient logs. If unaddressed, this duplication leads to artificial evaluation performance (data leakage) because identical patient records could split into both the train and test partitions. Preprocessing removes these duplicate rows, leaving a clean dataset of 602 unique observations. Missing values are evaluated and handled using a median imputation strategy for continuous data and a mode strategy for categorical variables.
 * **Exploratory Data Analysis (EDA):** Patient cohorts are analyzed to identify demographic distributions (age spikes, sex ratios) and target balances to confirm suitability for machine learning.
 * **Feature Scaling & Encoding:** Continuous numerical attributes (`age`, `trestbps`, `chol`, `thalach`, `oldpeak`) and newly engineered clinical interaction indicators are transformed using Scikit-learn's `StandardScaler` to have a mean of 0 and variance of 1. Categorical fields (`cp`, `restecg`, `slope`, `thal`) are converted via `OneHotEncoder` into binary representations.
-* **Model Training:** Training is isolated from the test dataset. Parameters are optimized via `GridSearchCV` utilizing a 5-fold Stratified Cross-Validation on the training partition ($N=241$), optimizing the $F_1$-score to maintain clinical safety by balancing precision and recall.
-* **Evaluation Process:** The finalized models are evaluated against the independent, stratified test dataset ($N=61$). Evaluation performance is logged through classification metrics (Accuracy, Precision, Recall, $F_1$-Score, and Area Under the ROC Curve).
+* **Model Training:** Training is isolated from the test dataset. Parameters are optimized via `GridSearchCV` utilizing a 5-fold Stratified Cross-Validation on the training partition ($N=481$), optimizing the $F_1$-score to maintain clinical safety by balancing precision and recall.
+* **Evaluation Process:** The finalized models are evaluated against the independent, stratified test dataset ($N=121$). Evaluation performance is logged through classification metrics (Accuracy, Precision, Recall, $F_1$-Score, and Area Under the ROC Curve).
 * **Visualization:** Performance reports are generated visually, plotting confusion matrices, receiver operating characteristic (ROC) curves, and feature importances.
 
 ---
@@ -259,9 +265,9 @@ The tools and libraries utilized in the CORDIS framework are tabulated below:
 
 ## Dataset Insights
 
-The CORDIS dataset, following deduplication, consists of **302 unique patient profiles** with a balanced target distribution:
-* **Positive Class (Heart Disease - 1):** 164 cases (54.3% of the cohort)
-* **Negative Class (Healthy - 0):** 138 cases (45.7% of the cohort)
+The CORDIS dataset, following deduplication, consists of **602 unique patient profiles** with a balanced target distribution:
+* **Negative Class (Healthy - 0):** 310 cases (51.5% of the cohort)
+* **Positive Class (Heart Disease - 1):** 292 cases (48.5% of the cohort)
 
 The clean class balance ensures that the models do not suffer from minority-class suppression. Feature analysis reveals that categorical columns such as chest pain type (`cp`), biological sex (`sex`), number of major vessels (`ca`), and thalassemia (`thal`) represent the most discriminative raw categorical covariates, while maximum heart rate achieved (`thalach`) and exercise-induced ST-segment depression (`oldpeak`) represent key continuous diagnostic predictors.
 
@@ -273,77 +279,85 @@ The data patterns and model characteristics are illustrated using the generated 
 
 ### 1. Age Distribution vs. Heart Disease Diagnosis
 Spikes in heart disease prevalence occur predominantly between the ages of 50 and 60. This reflects the clinical reality that cardiovascular disease risk increases with age due to long-term arterial degradation.
-![Age Distribution](../Images/eda_age_distribution.png)
+![Age Distribution](../Images/eda_02_age_distribution.png)
 
 ### 2. Disease Distribution (Target Class and Gender)
 The cohort target class is balanced (left plot below). The right plot demonstrates biological sex distribution, indicating that the dataset contains more male profiles, and males exhibit a higher prevalence of diagnostic cases in this cohort.
-![Target Distribution](../Images/eda_target_distribution.png)
-![Gender Distribution](../Images/eda_gender_distribution.png)
+![Target Distribution](../Images/eda_01_target_distribution.png)
+![Sex Distribution](../Images/eda_03_sex_distribution.png)
 
 ### 3. Feature Correlation Heatmap
 The correlation matrix indicates that chest pain type (`cp`, $r = 0.43$) and max heart rate (`thalach`, $r = 0.42$) are positively correlated with the presence of disease, while exercise-induced ST-segment depression (`oldpeak`, $r = -0.44$) and major vessels (`ca`, $r = -0.38$) exhibit negative correlations.
-![Correlation Heatmap](../Images/eda_correlation_heatmap.png)
+![Correlation Heatmap](../Images/eda_07_correlation_heatmap.png)
 
 ### 4. Chest Pain Type and Maximum Heart Rate Density Plots
-Chest pain type 2 (atypical angina) represents a high-prevalence indicator for positive diagnoses (left plot). The max heart rate density (right plot) shows that patients with heart disease generally reach higher peak heart rates (`thalach`) during cardiovascular exertion.
-![Chest Pain & Heart Rate Distribution](../Images/eda_heart_disease_distribution_plots.png)
+Chest pain type 2 (atypical angina) represents a high-prevalence indicator for positive diagnoses. The max heart rate density plot shows that patients with heart disease generally reach higher peak heart rates (`thalach`) during cardiovascular exertion.
+![Distribution by Target](../Images/eda_12_distribution_by_target.png)
 
 ---
 
 ## Model Performance
 
-The four tuned classifiers were evaluated on the independent test set ($N=61$). The resulting metrics are summarized in the comparison table below:
+The five tuned classifiers were evaluated on the independent test set ($N=121$). The resulting metrics are summarized in the comparison table below:
 
 ### Classifier Performance Metrics Comparison
 
 | Model | Accuracy | Precision | Recall (Sensitivity) | $F_1$-Score | ROC-AUC |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Logistic Regression ($L_2$)** | **83.61%** | 84.85% | **84.85%** | **84.85%** | **0.9069** |
-| **K-Nearest Neighbors (KNN)** | **83.61%** | **89.66%** | 78.79% | 83.87% | 0.8826 |
-| **Random Forest Ensemble** | 78.69% | 79.41% | 81.82% | 80.60% | 0.8669 |
-| **Decision Tree Classifier** | 73.77% | 72.97% | 81.82% | 77.14% | 0.7316 |
+| **Logistic Regression ($L_2$)** | 76.86% | 76.27% | 76.27% | 76.27% | 0.8650 |
+| **Decision Tree Classifier** | 79.34% | 76.56% | **83.05%** | 79.67% | 0.8438 |
+| **K-Nearest Neighbors (KNN)** | **82.64%** | **81.67%** | **83.05%** | **82.35%** | 0.8790 |
+| **Random Forest Ensemble** | 78.51% | 77.97% | 77.97% | 77.97% | **0.9002** |
+| **XGBoost Classifier** | 78.51% | 78.95% | 76.27% | 77.59% | 0.8647 |
 
 ### Performance Metrics Visualization
-The comparative bar chart highlights the performance metrics across all models, illustrating Logistic Regression's overall stability:
-![Accuracy Comparison](../Images/accuracy_comparison.png)
+The comparative bar chart highlights the performance metrics across all models, illustrating the model stability across Accuracy, Precision, Recall, F1, and ROC-AUC:
+![Model Comparison](../Images/model_comparison.png)
 
 ---
 
 ## Confusion Matrix Analysis
 
-The distribution of predictions on the test set ($N=61$, consisting of 28 actual healthy patients and 33 actual heart disease patients) is evaluated through the confusion matrices shown below:
+The distribution of predictions on the test set ($N=121$, consisting of 62 actual healthy patients and 59 actual heart disease patients) is evaluated through the confusion matrices shown below:
 
 ![Confusion Matrices](../Images/confusion_matrices.png)
 
 ### Confusion Matrix Tabular Breakdown
 
 * **Logistic Regression:**
-  * True Negatives (TN): 23 (Healthy correctly classified)
-  * False Positives (FP): 5 (Healthy incorrectly flagged as diseased)
-  * False Negatives (FN): 5 (Diseased patient missed)
-  * True Positives (TP): 28 (Diseased correctly identified)
-  * *Analysis:* Offers a balanced prediction error profile. The 5 False Negatives represent a low miss rate, which is critical for clinical safety.
-
-* **K-Nearest Neighbors (KNN):**
-  * True Negatives (TN): 25
-  * False Positives (FP): 3
-  * False Negatives (FN): 7
-  * True Positives (TP): 26
-  * *Analysis:* KNN achieves high specificity (only 3 False Positives), resulting in a high Precision of 89.66%. However, it misses 7 patients with active heart disease (False Negatives), resulting in a lower Recall of 78.79%, which poses a clinical risk.
-
-* **Random Forest:**
-  * True Negatives (TN): 21
-  * False Positives (FP): 7
-  * False Negatives (FN): 6
-  * True Positives (TP): 27
-  * *Analysis:* The ensemble fails to outperform the linear baseline, introducing 7 False Positives and 6 False Negatives, demonstrating moderate generalization on the test partition.
+  * True Negatives (TN): 48 (Healthy correctly classified)
+  * False Positives (FP): 14 (Healthy incorrectly flagged as diseased)
+  * False Negatives (FN): 14 (Diseased patient missed)
+  * True Positives (TP): 45 (Diseased correctly identified)
+  * *Analysis:* Offers a moderate, balanced prediction error profile. The 14 False Negatives represent a moderate clinical risk of missed diagnoses.
 
 * **Decision Tree:**
-  * True Negatives (TN): 18
-  * False Positives (FP): 10
-  * False Negatives (FN): 6
-  * True Positives (TP): 27
-  * *Analysis:* The worst-performing model. It produces 10 False Positives, indicating that the single-tree architecture struggles to establish robust boundaries on small clinical cohorts.
+  * True Negatives (TN): 47
+  * False Positives (FP): 15
+  * False Negatives (FN): 10
+  * True Positives (TP): 49
+  * *Analysis:* Decision Tree achieves a high Recall of 83.05% (only 10 missed cases) but has the highest False Positive count (15 FP), showing typical high variance.
+
+* **K-Nearest Neighbors (KNN):**
+  * True Negatives (TN): 51
+  * False Positives (FP): 11
+  * False Negatives (FN): 10
+  * True Positives (TP): 49
+  * *Analysis:* KNN achieves the highest test Accuracy (82.64%) and $F_1$-score (82.35%), with low false alarms (11 FP) and missed diagnoses (10 FN) due to robust distance metric clusters.
+
+* **Random Forest:**
+  * True Negatives (TN): 49
+  * False Positives (FP): 13
+  * False Negatives (FN): 13
+  * True Positives (TP): 46
+  * *Analysis:* The ensemble balances high probability calibration (ROC-AUC = 0.9002) with moderate discrete threshold performance (13 FP, 13 FN).
+
+* **XGBoost:**
+  * True Negatives (TN): 50
+  * False Positives (FP): 12
+  * False Negatives (FN): 14
+  * True Positives (TP): 45
+  * *Analysis:* Reaches identical 78.51% Accuracy but misses 14 active cases, scoring slightly lower on Recall compared to KNN and RandomForest.
 
 ---
 
@@ -351,13 +365,13 @@ The distribution of predictions on the test set ($N=61$, consisting of 28 actual
 
 The selection of the best model for clinical deployment requires balancing diagnostic safety with predictive accuracy. 
 
-While **K-Nearest Neighbors (KNN)** and **Logistic Regression** share the highest overall Accuracy of **83.61%**, **Logistic Regression** is the superior choice for a clinical prognostic support system. This decision is based on the following reasons:
-1. **Clinical Sensitivity (Recall):** KNN achieves a high Precision of 89.66% but a low Recall of **78.79%** (7 False Negatives). In clinical screening, missing an active cardiac pathology (a False Negative) is much more dangerous than a False Positive (which can be resolved through secondary clinical exams). Logistic Regression provides a higher, balanced Recall of **84.85%** (only 5 False Negatives).
-2. **Discriminative Capability (ROC-AUC):** Logistic Regression exhibits a superior ROC-AUC of **0.9069** compared to KNN's 0.8826, demonstrating stronger probability calibration across various decision thresholds (as shown in the ROC curves below).
-3. **Interpretability:** Logistic Regression coefficients represent the direct risk multiplier for each feature, allowing doctors to understand why a patient was flagged. KNN is an instance-based model that offers no clinical justification for its predictions.
+While **K-Nearest Neighbors (KNN)** achieved the highest overall Accuracy of **82.64%** and $F_1$-score of **82.35%** on the test set, the **Random Forest Ensemble** was selected as the deployment model. This decision is based on the following reasons:
+1. **Superior Probability Calibration (ROC-AUC):** Random Forest exhibits a superior ROC-AUC of **0.9002** compared to KNN's 0.8790, demonstrating stronger class probability calibration across various decision thresholds (as shown in the ROC curves below). This is critical in clinical diagnostic settings where risk probabilities are used for clinical stratification rather than hard binary outcomes.
+2. **Robustness and Stability:** As a bootstrap-aggregated ensemble of 100 de-correlated decision trees, Random Forest is highly resilient to variance and local perturbations in clinical measurements.
+3. **Interpretability:** Random Forest allows the extraction of global feature importances, providing clinicians with clear visibility into which clinical factors (e.g., major vessels, chest pain type, max heart rate) drive the model's predictions. KNN is an instance-based model that does not construct an explicit model boundary or feature coefficients, making it a "black-box" model in terms of global explanation.
 
 ### Receiver Operating Characteristic (ROC) Curves
-The curves plot sensitivity (Recall) against 1-specificity (False Positive Rate). Logistic Regression (blue line) maintains the largest Area Under the Curve (AUC):
+The curves plot sensitivity (Recall) against 1-specificity (False Positive Rate). Random Forest (red line) maintains the largest Area Under the Curve (AUC):
 ![ROC Curves](../Images/roc_curves.png)
 
 ---
@@ -365,9 +379,9 @@ The curves plot sensitivity (Recall) against 1-specificity (False Positive Rate)
 ## Overall Interpretation
 
 The results highlight key trade-offs in machine learning model complexity:
-* **Parametric vs. Non-parametric Performance:** On small datasets (such as this 302-row cohort), simple parametric models like regularized **Logistic Regression** tend to generalize better than complex non-parametric models. Logistic Regression optimizes a global weight vector with $L_2$ regularization, constraining the coefficients to prevent overfitting.
-* **Tree-based Overfitting:** **Decision Trees** construct local axis-aligned splits, which easily overfit small sample sizes, leading to high variance (73.77% accuracy). The **Random Forest** ensemble reduces this variance through bagging, improving accuracy to 78.69%. However, it still falls short of the Logistic Regression baseline due to the limited size of the training dataset.
-* **Feature Influences:** The Random Forest feature importance chart indicates that the number of major vessels (`ca`), chest pain type (`cp`), and thalassemia type (`thal`) are the primary features driving classification, aligning with established cardiovascular risk factors.
+* **Distance-based Clustering vs. Linear/Tree Boundaries:** On this 602-row cohort, instance-based learning via **K-Nearest Neighbors (KNN)** generalizes extremely well, achieving the highest accuracy. Normalizing continuous features and utilizing a Manhattan distance metric allows KNN to construct local neighborhood clusters that match the pathological status of patients.
+* **Tree-based ensembles vs. Single Trees:** Single **Decision Trees** construct local axis-aligned splits that overfit training folds, showing typical variance (79.34% test accuracy). The **Random Forest** ensemble successfully controls this variance through bagging, resulting in a much higher generalization capacity and the highest ROC-AUC (0.9002).
+* **Feature Influences:** The feature importance analysis indicates that the number of major vessels (`ca`), chest pain type (`cp`), and thalassemia type (`thal`) are the primary features driving classification, aligning with established cardiovascular risk factors.
 ![Feature Importances](../Images/feature_importances.png)
 
 ---
@@ -376,10 +390,10 @@ The results highlight key trade-offs in machine learning model complexity:
 
 Project CORDIS successfully developed, validated, and compared a machine-learning-driven pipeline for heart disease risk prediction. 
 
-* **Methodology Summary:** The framework implemented a pipeline that included raw data loading, data deduplication (reducing the dataset from 1025 to 302 unique records to prevent data leakage), median/mode imputation, stratified 80:20 partitioning, standardization of continuous features, and one-hot encoding of categorical variables. Hyperparameter optimization was conducted via 5-fold Stratified Cross-Validation on the training partition ($N=241$) using the $F_1$-score as the primary tuning objective.
-* **Results Summary:** Comparative evaluations on the independent test set ($N=61$) demonstrated that parametric and instance-based models outperformed tree-based architectures.
-* **Best-Performing Model:** $L_2$-regularized Logistic Regression ($C=0.1$) was identified as the optimal model for clinical deployment. It achieved **83.61% accuracy**, a balanced **84.85% $F_1$-score**, a high **84.85% recall (sensitivity)** to minimize missed cases, and a superior **0.9069 ROC-AUC**. 
-* **Final Conclusion:** Project CORDIS demonstrates that a well-tuned, regularized machine learning model can serve as a reliable, non-invasive, and interpretable clinical decision support tool, helping prioritize high-risk patients for early intervention.
+* **Methodology Summary:** The framework implemented a pipeline that included raw data loading, data deduplication (reducing the dataset from 1,888 to 602 unique records to prevent data leakage), winsorization of continuous features, stratified 80:20 partitioning, standardization, and one-hot encoding. Hyperparameter optimization was conducted via 5-fold Stratified Cross-Validation on the training partition ($N=481$) using the $F_1$-score as the primary tuning objective.
+* **Results Summary:** Comparative evaluations on the independent test set ($N=121$) demonstrated that KNN achieved the highest test accuracy (82.64%) and $F_1$-score (82.35%), while Random Forest achieved the highest probability calibration (ROC-AUC = 0.9002).
+* **Best-Performing Model:** Random Forest was selected as the optimal model for clinical deployment due to its superior probability calibration (**0.9002 ROC-AUC**), ensemble stability, and capability to provide explainable global feature importances.
+* **Final Conclusion:** Project CORDIS demonstrates that a well-tuned, regularized machine learning ensemble can serve as a reliable, non-invasive, and interpretable clinical decision support tool, helping prioritize high-risk patients for early intervention.
 
 For future work, the project can be expanded by integrating Explainable AI (XAI) tools like SHAP or LIME to provide case-specific explanations, adopting privacy-preserving Federated Learning to train models across different clinics, and implementing active learning to reduce data labeling costs.
 
