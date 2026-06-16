@@ -1,0 +1,189 @@
+====================================================================================================
+               CORDIS: CARDIOVASCULAR DIAGNOSTIC SUPPORT SYSTEM
+                       CONCISE VIVA PREPARATION CHEETSHEET
+====================================================================================================
+
+This sheetsheet provides direct, to-the-point answers to essential project viva questions.
+
+----------------------------------------------------------------------------------------------------
+SECTION 1: DATA PREPROCESSING & CLEANING
+----------------------------------------------------------------------------------------------------
+
+Q1.1: What is the shape of your raw dataset, and why was deduplication necessary?
+Answer:
+- Raw shape: 1,025 samples, 14 columns. Clean shape (deduplicated): 302 unique samples.
+- Necessity: Dropped 723 duplicates to prevent Data Leakage. If duplicates are present in both train
+  and test sets, performance metrics will be artificially inflated.
+
+Q1.2: How did you handle missing values in your preprocessing pipeline?
+Answer:
+- Continuous variables: Imputed using Median (robust to outliers like extreme blood pressure/cholesterol).
+- Categorical/binary variables: Imputed using Mode (most frequent value, mathematically correct for nominal data).
+
+Q1.3: How did you split your dataset? Why was stratification crucial?
+Answer:
+- Ratio: 80% train (241 samples), 20% test (61 samples).
+- Stratification: Ensures the ratio of positive (disease) to negative (healthy) classes is identical
+  in both train and test splits (~54.3% vs 45.7%). Prevents evaluation bias on test data.
+
+----------------------------------------------------------------------------------------------------
+SECTION 2: FEATURE ENGINEERING & SCALING
+----------------------------------------------------------------------------------------------------
+
+Q2.1: What custom features did you engineer, and what is their clinical justification?
+Answer:
+1. 'bp_chol_ratio' = trestbps / (chol + 1e-5): Combines blood pressure and cholesterol load to capture
+   synergistic cardiovascular risk.
+2. 'thalach_age_ratio' = thalach / (age + 1e-5): Normalizes max heart rate capacity relative to the
+   patient's age (since max heart rate capacity declines naturally with age).
+3. 'oldpeak_slope_interaction' = oldpeak * slope: Multiplies ST-depression on ECG by recovery slope
+   to amplify the ischemia signal.
+
+Q2.2: Why did you scale your numerical features, and which scaling method did you use?
+Answer:
+- Method: StandardScaler (z-score normalization: mean=0, variance=1).
+- Necessity: 
+  1. KNN calculates distances; unscaled features with large ranges (like cholesterol) will dominate the metric.
+  2. Logistic Regression uses gradient descent; scaling ensures uniform gradients and faster convergence.
+
+Q2.3: How did you handle categorical variables? Why not use label encoding?
+Answer:
+- Method: One-Hot Encoding via `OneHotEncoder` (creates binary columns for categories).
+- Label Encoding was avoided because assigning integers (0, 1, 2, 3) imposes an artificial order
+  on non-ordinal features (e.g., chest pain types), which biases linear and distance-based models.
+
+Q2.4: How did you ensure there was no data leakage during feature scaling?
+Answer:
+- Split dataset into train and test sets first.
+- Fit the scaler and encoder on the training set ONLY, then apply the transform on both sets.
+- Fitting on the entire dataset beforehand leaks test-set statistics (mean, variance) to the model.
+
+----------------------------------------------------------------------------------------------------
+SECTION 3: MACHINE LEARNING MODELS & ALGORITHMS
+----------------------------------------------------------------------------------------------------
+
+Q3.1: Explain the mathematical working of Logistic Regression.
+Answer:
+- Calculates a weighted sum: z = w^T * x + b.
+- Maps z to a probability (0 to 1) using the Sigmoid function: P(y=1|x) = 1 / (1 + e^-z).
+- Learns weights by minimizing Binary Cross-Entropy (Log Loss) with an L2 regularization penalty.
+
+Q3.2: Explain KNN. What are its pros and cons in this context?
+Answer:
+- Working: Stores training data. Classifies a query point by taking the majority vote of its 'k' nearest
+  neighbors in the feature space based on Euclidean/Manhattan distance.
+- Pros: Simple, adaptively updates with new data.
+- Cons: Slow inference O(N*d) because it must scan all training data; high memory footprint; no model
+  explainability.
+
+Q3.3: Compare Decision Trees and Random Forests. Why did Random Forest perform better?
+Answer:
+- Decision Tree: Recursively splits features to maximize Information Gain. High variance, overfits easily.
+- Random Forest: Ensemble of de-correlated decision trees trained on bootstrapped samples using random
+  feature subsets.
+- Why better: Bagging averages tree outputs, which significantly reduces variance and overfitting.
+
+Q3.4: Why did Logistic Regression outperform Random Forest in this project?
+Answer:
+- Random Forest (78.69% accuracy) requires a large dataset to map clean non-linear boundaries. On this
+  small dataset (241 training samples), it overfit to noise.
+- Regularized Logistic Regression (83.61% accuracy) has lower capacity, and its L2 penalty constrains
+  weights, preventing overfitting on small clinical cohorts.
+
+----------------------------------------------------------------------------------------------------
+SECTION 4: HYPERPARAMETER TUNING & CROSS-VALIDATION
+----------------------------------------------------------------------------------------------------
+
+Q4.1: Explain your cross-validation scheme. Why did you use Stratified K-Fold?
+Answer:
+- Scheme: 5-Fold Stratified Cross-Validation.
+- Method: Splits training data into 5 folds. Trains on 4, validates on 1. Repeats 5 times.
+- Stratification: Keeps class distributions identical across all folds to prevent training instability
+  and parameter tuning bias.
+
+Q4.2: Why did you optimize your grid search using the F1-score instead of Accuracy?
+Answer:
+- Accuracy treats False Negatives and False Positives equally.
+- In medicine, a False Negative (missing a sick patient) is far more dangerous than a False Positive.
+- F1-score (harmonic mean of Precision and Recall) forces GridSearchCV to select hyperparameters
+  that balance clinical sensitivity with classification precision.
+
+Q4.3: What were your best parameters for each model?
+Answer:
+- Logistic Regression: {'C': 0.1, 'penalty': 'l2'}
+- KNN: {'metric': 'manhattan', 'n_neighbors': 11, 'weights': 'uniform'}
+- Decision Tree: {'criterion': 'gini', 'max_depth': 3, 'min_samples_split': 2}
+- Random Forest: {'max_depth': 5, 'min_samples_split': 5, 'n_estimators': 50}
+
+----------------------------------------------------------------------------------------------------
+SECTION 5: EVALUATION METRICS & TRADE-OFFS
+----------------------------------------------------------------------------------------------------
+
+Q5.1: Define Accuracy, Precision, Recall, and F1-Score for this project.
+Answer:
+- Accuracy: Ratio of correct predictions to total cases. (LR: 83.61%)
+- Precision: Out of all predicted disease cases, how many are actual cases. (LR: 84.85%)
+- Recall (Sensitivity): Out of all actual disease cases, how many were correctly flagged. (LR: 84.85%)
+- F1-Score: Harmonic mean of Precision and Recall. (LR: 84.85%)
+
+Q5.2: Which metric is more important for heart disease prediction: Precision or Recall? Why?
+Answer:
+- Recall is significantly more important.
+- False Negative (low recall): Sick patient is classified as healthy and sent home without treatment,
+  which is life-threatening.
+- False Positive (low precision): Healthy patient is flagged as sick, leading to minor diagnostic
+  re-testing (incurs cost/anxiety but is not fatal).
+
+Q5.3: Why was Logistic Regression selected for deployment over KNN (both have 83.61% accuracy)?
+Answer:
+1. Higher Recall: LR has 84.85% Recall (5 missed cases) vs. KNN's 78.79% (7 missed cases).
+2. Better AUC-ROC: LR has 0.9069 vs. KNN's 0.8826.
+3. Clinical Interpretability: LR coefficients explain the risk impact of features; KNN is a black-box.
+
+Q5.4: Explain what the ROC Curve and AUC-ROC score represent.
+Answer:
+- ROC Curve: Plots Sensitivity (Recall) vs. 1-Specificity (False Positive Rate) across all decision thresholds.
+- AUC-ROC: The area under the ROC curve. A score of 0.9069 means there is a 90.69% probability that the
+  model will rank a randomly chosen diseased patient higher than a randomly chosen healthy patient.
+
+----------------------------------------------------------------------------------------------------
+SECTION 6: CONCEPTUAL, MATHEMATICAL & TRICK VIVA QUESTIONS
+----------------------------------------------------------------------------------------------------
+
+Q6.1: What does the parameter 'C' in Logistic Regression represent? What does C=0.1 mean?
+Answer:
+- 'C' is the inverse of regularization strength: C = 1 / \lambda.
+- C=0.1 means strong regularization (\lambda = 10). It heavily penalizes large weight coefficients,
+  simplifying the decision boundary to prevent overfitting.
+
+Q6.2: What is the difference between L1 (Lasso) and L2 (Ridge) regularization? Why L2?
+Answer:
+- L1 (Lasso): Adds absolute weight penalty (\sum |w|). Drives some weights to exactly 0, acting as feature selection.
+- L2 (Ridge): Adds squared weight penalty (\sum w^2). Shrinks all weights, keeping all features.
+- Why L2: In cardiology, all collected features are clinically relevant. We want to scale down feature
+  influence to prevent overfitting rather than discarding features completely.
+
+Q6.3: What is the "Curse of Dimensionality" and how does it affect KNN?
+Answer:
+- Phenomenon where high-dimensional spaces grow exponentially sparse.
+- Distances between all points converge to a uniform value, making distance-based similarity checks
+  (the core of KNN) mathematically useless.
+
+Q6.4: Explain Gini Impurity vs. Entropy in Decision Trees.
+Answer:
+- Gini: Measures probability of incorrect classification. Formula: 1 - \sum (p_i)^2. (Faster to compute).
+- Entropy: Measures information disorder. Formula: - \sum p_i * log_2(p_i). (Computationally slower).
+- Grid search selected 'gini' as optimal for our Decision Tree.
+
+Q6.5: How do you interpret the coefficients of your Logistic Regression model?
+Answer:
+- Exponentiating a coefficient (e^w) gives the Odds Ratio (OR) for that feature.
+- OR > 1 (positive weight): An increase in feature value increases the odds of heart disease.
+- OR < 1 (negative weight): An increase in feature value decreases the odds of heart disease.
+
+Q6.6: What are the future clinical steps for Project CORDIS?
+Answer:
+1. Explainable AI (XAI): Integrate SHAP or LIME for patient-specific feature attribution plots.
+2. Federated Learning: Train models locally at different clinics and aggregate weights to protect privacy.
+3. Active Learning: Query borderline/uncertain patient files for expert annotation, reducing labeling costs.
+====================================================================================================
